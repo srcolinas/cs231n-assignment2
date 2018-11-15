@@ -3,3 +3,12 @@ venv
 
 #data files
 cifar-10-batches-py
+
+#python cache
+__pycache__
+
+#notebook checkpoints
+.ipynb_checkpoints
+
+#vscode
+.vscode
