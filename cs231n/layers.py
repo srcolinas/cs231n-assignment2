@@ -557,7 +557,43 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
+    # Get conv params for easier acces
+    stride, pad = conv_param['stride'], conv_param['pad']
+    # Get the shape of x
+    N, C, H, W = x.shape
+    # Get shape of w
+    F, C, HH, WW = w.shape
+    # Compute the shape of output volume
+    Ho = 1 + (H + 2 * pad - HH) / stride
+    Wo = 1 + (W + 2 * pad - WW) / stride
+    try:
+        assert (int(Ho) == Ho and int(Wo) == Wo)
+    except AssertionError:
+        raise ValueError("Invalid arguments for the convolution")
+    else:
+        Ho, Wo = int(Ho), int(Wo)
+    
+    # Zero pad
+    x_ = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode='constant', constant_values=0)
+    # Convolve
+    out = np.zeros((N, F, Ho, Wo))
+    w_ = np.reshape(w, (F, -1)).T # This is useful for inner product
+    #print(" RESHAPED FILTERS", w_.shape, w_)
+    j = 0 # Initialize location in padded volume
+    jo = 0 # Initialize location in output volume
+    while j + WW <= W + 2 * pad:
+        i = 0
+        io = 0
+        while i + HH <= H + 2 * pad:
+            receptive_field = x_[..., i:i + HH, j:j + WW].reshape((N, -1))
+            out_ = np.dot(receptive_field, w_) + b
+            out[:, :, io, jo] = out_
+            
+            io += 1 
+            i += stride
+        jo += 1
+        j += stride
+     
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -582,7 +618,7 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    pass
+    
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
