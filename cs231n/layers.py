@@ -618,7 +618,56 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
+    # Unpack the cache
+    (x, w, b, conv_param) = cache
+    # Get conv params for easier acces
+    stride, pad = conv_param['stride'], conv_param['pad']
+    # Get the shape of x (activations from previous layer)
+    N, C, H, W = x.shape
+    # Get shape of w (filters of current layer)
+    F, C, HH, WW = w.shape
+    # Get the shape of dout (output of the current conv at forward time)
+    N, F, Ho, Wo = dout.shape
+    # Initialize gradients with proper shape
+    dx = np.zeros((N, C, H, W))
+    dw = np.zeros((F, C, HH, WW))
+    db = np.zeros((F, ))
+    # Zero pad
+    x_ = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode='constant', constant_values=0)
+    dx_ = np.pad(dx, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode='constant', constant_values=0)
+    for i in range(N): # loop over training examples
+        
+        # Select i training example
+        x_i = x_[i]
+        dx_i = dx_[i]
+
+        for f in range(F): # loop over the channels of output volume
+            for height in range(Ho): # loop over the height of output volulme
+                for width in range(Wo): # loop over the width of output volume
+                    
+                    # Find the corners of the slice
+                    vert_start = height * stride
+                    vert_end = vert_start + HH
+                    horiz_start = width * stride
+                    horiz_end = horiz_start + WW
+
+                    # Select the proper region in xi
+                    x_i_slice = x_i[:, vert_start: vert_end, horiz_start: horiz_end]
+
+                    # Update gradients for the window and the filter's parameters using the code formulas given above
+                    vals = w[f,:,:,:] * dout[i, f, height, width]
+                    dx_i[:, vert_start:vert_end, horiz_start:horiz_end] += vals
+
+                    vals = x_i_slice * dout[i, f, height, width]
+                    dw[f, :, :, :] += vals
+
+                    db[f] += dout[i, f, height, width]
+                    
+        dx[i, :, :, :] = dx_i[:, pad:-pad, pad:-pad]
     
+    #dw, _ = conv_forward_naive(np.swapaxes(x, 0, 1), np.swapaxes(dout, 0, 1), b, conv_param)
+    #dw = np.swapaxes(dw, 0, 1)
+    #db = np.sum(dout, axis=(0, 2, 3))
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -646,9 +695,42 @@ def max_pool_forward_naive(x, pool_param):
     """
     out = None
     ###########################################################################
-    # TODO: Implement the max-pooling forward pass                            #
+    # TODO: Implement the convolutional forward pass.                         #
+    # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
+    # Get conv params for easier acces
+    stride = pool_param['stride']
+    pool_height =  pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    # Get the shape of x
+    N, C, H, W = x.shape
+    # Compute the shape of output volume
+    Ho = 1 + (H - pool_height) / stride
+    Wo = 1 + (W - pool_width) / stride
+    try:
+        assert (int(Ho) == Ho and int(Wo) == Wo)
+    except AssertionError:
+        raise ValueError("Invalid arguments for the convolution")
+    else:
+        Ho, Wo = int(Ho), int(Wo)
+
+    # Pool
+    out = np.zeros((N, C, Ho, Wo))
+    j = 0 # Initialize location in original volume
+    jo = 0 # Initialize location in output volume
+    while j + pool_width <= W:
+        i = 0
+        io = 0
+        while i + pool_height <= H:
+            receptive_field = x[..., i:i + pool_height, j:j + pool_width]
+            out_ = np.max(receptive_field, axis=(-2, -1))
+            out[:, :, io, jo] = out_
+            
+            io += 1 
+            i += stride
+        jo += 1
+        j += stride
+     
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -671,7 +753,44 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the max-pooling backward pass                           #
     ###########################################################################
-    pass
+    # Unpack cache
+    (x, pool_param) = cache
+    # Get conv params for easier acces
+    stride = pool_param['stride']
+    pool_height =  pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    # Get dimentions of output layer
+    N, F, Ho, Wo = dout.shape
+    # Get dimentions of input layer
+    N, F, H, W = x.shape
+    # Initialize derivatives with zeros
+    dx = np.zeros_like(x)
+    
+    for i in range(N): # loop over training examples
+    
+        # Select i training example
+        xi = x[i]
+    
+        for f in range(F): # loop over the channels of output volume
+    
+            for height in range(Ho): # loop over the height of output volulme
+                for width in range(Wo): # loop over the width of output volume
+                    
+                    # Find the corners of the slice
+                    vert_start = height * stride
+                    vert_end = vert_start + pool_height
+                    horiz_start = width * stride
+                    horiz_end = horiz_start + pool_width
+    
+                    # Select the proper region in xi
+                    xi_slice = xi[f, vert_start: vert_end, horiz_start: horiz_end]
+    
+                    # Update gradients for the window using the indices of max values
+                    mask = xi_slice == np.max(xi_slice)
+                
+                    vals = mask * dout[i, f, height, width]
+                    dx[i, f, vert_start:vert_end, horiz_start:horiz_end] += vals
+                    
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -709,7 +828,14 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    gamma  = np.repeat(gamma, H * W)
+    beta = np.repeat(beta, H * W)
+    x_ = np.reshape(x, (N, -1))
+    out, cache = batchnorm_forward(x_, gamma, beta, bn_param)
+    #gamma, bmean, bvar, x, x_, N, eps = cache
+
+    out = np.reshape(out, (N, C, H, W))
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -739,7 +865,13 @@ def spatial_batchnorm_backward(dout, cache):
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
-    pass
+    N, C, H, W = dout.shape
+    dout = np.reshape(dout, (N, -1))
+    dx, dgamma, dbeta = batchnorm_backward(dout, cache)
+    dx = np.reshape(dx, (N, C, H, W))
+
+    dgamma = np.reshape(dgamma, (C, H * W)).sum(axis=1)
+    dbeta = np.reshape(dbeta, (C, H * W)).sum(axis=1)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -775,7 +907,14 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     # the bulk of the code is similar to both train-time batch normalization  #
     # and layer normalization!                                                # 
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    assert C % G == 0
+    x = np.reshape(x, [N, G, C // G, H, W]) # now x has shape (N, G, C/G, H, W)
+    mean = np.mean(x, axis=(2,3,4), keepdims=True)
+    var = np.var(x, axis=(2,3,4), keepdims=True)
+    out = (x - mean)/np.sqrt(var + eps)
+    out = np.reshape(out, (N, C, H, W))
+    out = out * gamma + beta
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################

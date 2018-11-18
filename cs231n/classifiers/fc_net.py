@@ -77,7 +77,6 @@ class TwoLayerNet(object):
         # and biases using the keys 'W1' and 'b1' and second layer                 #
         # weights and biases using the keys 'W2' and 'b2'.                         #
         ############################################################################
-        self.params = {}
         self.params['W1'] = np.random.normal(
             loc=0, scale=weight_scale, size=(input_dim, hidden_dim)
         )
