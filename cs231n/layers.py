@@ -342,6 +342,50 @@ def batchnorm_backward_alt(dout, cache):
 
     return dx, dgamma, dbeta
 
+# def layernorm_forward(x, gamma, beta, ln_param):
+#     """
+#     Forward pass for layer normalization.
+
+#     During both training and test-time, the incoming data is normalized per data-point,
+#     before being scaled by gamma and beta parameters identical to that of batch normalization.
+    
+#     Note that in contrast to batch normalization, the behavior during train and test-time for
+#     layer normalization are identical, and we do not need to keep track of running averages
+#     of any sort.
+
+#     Input:
+#     - x: Data of shape (N, D)
+#     - gamma: Scale parameter of shape (D,)
+#     - beta: Shift paremeter of shape (D,)
+#     - ln_param: Dictionary with the following keys:
+#         - eps: Constant for numeric stability
+
+#     Returns a tuple of:
+#     - out: of shape (N, D)
+#     - cache: A tuple of values needed in the backward pass
+#     """
+#     out, cache = None, None
+#     eps = ln_param.get('eps', 1e-5)
+#     ###########################################################################
+#     # TODO: Implement the training-time forward pass for layer norm.          #
+#     # Normalize the incoming data, and scale and  shift the normalized data   #
+#     #  using gamma and beta.                                                  #
+#     # HINT: this can be done by slightly modifying your training-time         #
+#     # implementation of  batch normalization, and inserting a line or two of  #
+#     # well-placed code. In particular, can you think of any matrix            #
+#     # transformations you could perform, that would enable you to copy over   #
+#     # the batch norm code and leave it almost unchanged?                      #
+#     ###########################################################################
+#     bn_param = {'running_mean': 0, 'running_var': 0, 'mode': 'train',
+#         'eps': eps, 'momentum': 0
+#     }
+#     gamma = np.reshape(gamma, (-1, 1))
+#     beta = np.reshape(beta, (-1,1))
+#     out, cache = batchnorm_forward(x.T, gamma, beta, bn_param)
+#     ###########################################################################
+#     #                             END OF YOUR CODE                            #
+#     ###########################################################################
+#     return out, cache
 
 def layernorm_forward(x, gamma, beta, ln_param):
     """
@@ -378,11 +422,11 @@ def layernorm_forward(x, gamma, beta, ln_param):
     # the batch norm code and leave it almost unchanged?                      #
     ###########################################################################
     lmean = np.mean(x, axis=1, keepdims=True)
-    lstd = np.sqrt(np.var(x, axis=1, keepdims=True) + eps)
-    x_ = (x - lmean)/lstd
+    lvar = np.var(x, axis=1, keepdims=True)
+    x_ = (x - lmean)/np.sqrt(lvar + eps)
     out = gamma * x_ + beta
 
-    cache = (gamma, beta, lmean, lstd, x, x_, eps)
+    cache = (gamma, beta, lmean, lvar, x, x_, eps)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -413,25 +457,43 @@ def layernorm_backward(dout, cache):
     # implementation of batch normalization. The hints to the forward pass    #
     # still apply!                                                            #
     ###########################################################################
-    gamma, beta, lmean, lstd, x, x_, eps = cache
+    gamma, beta, lmean, lvar, x, x_, eps = cache
     N, D = dout.shape 
 
+    # dx_ = dout * gamma
+    # bvareps = bvar + eps
+    # xbmean = x - bmean
+    # dx_bvareps = dx_ * (1/np.sqrt(bvareps))
+
+    # const1 = 0.5 * (bvareps)**(-1.5) 
+    # dx_xbmean = dx_ * xbmean
+    # arg = dx_xbmean * (-1 * const1)
+    # dbvar = np.sum(arg, axis=0)
+
+    # arg = np.sum(-1 * dx_bvareps, axis=0)
+    # dbmean = arg + (dbvar * np.mean(-2 * (xbmean)))
+    
+    # arg2 = dbvar * (2/N) * xbmean
+    # arg3 =  dbmean * (1/N)
+    # dx = dx_bvareps + arg2 + arg3 
+
     dx_ = dout * gamma
-    lvareps = lstd**2
+
+    lvareps = lvar + eps
     xlmean = x - lmean
-    dx_lstd = dx_ * (1/lstd)
+    dx_lvareps = dx_ * (1/np.sqrt(lvareps))
 
     const1 = 0.5 * (lvareps)**(-1.5) 
     dx_xlmean = dx_ * xlmean
     arg = dx_xlmean * (-1 * const1)
-    dlvar = np.sum(arg, axis=0)
+    dlvar = np.sum(arg, axis=1)
 
-    arg = np.sum(-1 * dx_lstd, axis=0)
-    dlmean = arg + (dlvar * np.mean(-2 * (xlmean)))
+    arg = np.sum(-1 * dx_lvareps, axis=1)
+    dlmean = arg + (dlvar * np.sum(-2 * (xlmean), axis=1))/ N
     
-    arg2 = dlvar * (2/D) * xlmean
+    arg2 = dlvar.reshape((-1,1)) * (2/D) * xlmean
     arg3 =  dlmean * (1/D)
-    dx = dx_lstd + arg2 + arg3
+    dx = dx_lvareps + arg2 + arg3.reshape((-1,1))
 
     dgamma = np.sum(dout * x_, axis=0)
     dbeta = np.sum(dout, axis=0)
@@ -538,7 +600,7 @@ def conv_forward_naive(x, w, b, conv_param):
     - b: Biases, of shape (F,)
     - conv_param: A dictionary with the following keys:
       - 'stride': The number of pixels between adjacent receptive fields in the
-        horizontal and vertical directions.
+        horizontal and vertihttps://www.coursera.org/specializations/deep-learningcal directions.
       - 'pad': The number of pixels that will be used to zero-pad the input. 
         
 
@@ -861,7 +923,7 @@ def spatial_batchnorm_backward(dout, cache):
     ###########################################################################
     # TODO: Implement the backward pass for spatial batch normalization.      #
     #                                                                         #
-    # HINT: You can implement spatial batch normalization by calling the      #
+    # HINT: You can implement https://www.coursera.org/specializations/deep-learningspatial batch normalization by calling the      #
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
